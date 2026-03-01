@@ -2,18 +2,45 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Sparkles, Mail, Lock, ArrowRight } from 'lucide-react'
+import { authApi } from '@/lib/api'
 
 export default function LoginPage() {
+    const router = useRouter()
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [isLoading, setIsLoading] = useState(false)
+    const [error, setError] = useState('')
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
+        setError('')
         setIsLoading(true)
-        // TODO: Implement login logic
-        setTimeout(() => setIsLoading(false), 1000)
+
+        try {
+            // Call the backend API
+            const response = await authApi.login({
+                email,
+                password
+            })
+
+            // Store the token
+            localStorage.setItem('token', response.access_token)
+            localStorage.setItem('user', JSON.stringify(response.user))
+
+            // Redirect to dashboard
+            router.push('/dashboard')
+        } catch (err: any) {
+            console.error('Login error:', err)
+            setError(
+                err.userMessage ||
+                err.response?.data?.detail ||
+                'Login failed. Please check your credentials.'
+            )
+        } finally {
+            setIsLoading(false)
+        }
     }
 
     return (
@@ -37,6 +64,13 @@ export default function LoginPage() {
                         <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h1>
                         <p className="text-gray-600">Sign in to continue creating amazing content</p>
                     </div>
+
+                    {/* Error Message */}
+                    {error && (
+                        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                            <p className="text-sm text-red-600">{error}</p>
+                        </div>
+                    )}
 
                     <form onSubmit={handleSubmit} className="space-y-6">
                         {/* Email Input */}

@@ -1,16 +1,36 @@
+'use client'
+
 import Link from 'next/link'
-import { Sparkles, Zap, TrendingUp, BarChart3, ArrowRight } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Sparkles, Zap, TrendingUp, BarChart3, ArrowRight, LogOut } from 'lucide-react'
 
 export default function DashboardPage() {
+    const router = useRouter()
+
+    const handleLogout = () => {
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        router.replace('/login')
+    }
+
     return (
         <div className="min-h-screen bg-gray-50">
             <div className="container py-8">
                 {/* Header */}
-                <div className="mb-8">
-                    <h1 className="text-3xl font-bold text-gray-900">Welcome back! 👋</h1>
-                    <p className="mt-2 text-gray-600">
-                        Ready to create amazing content today?
-                    </p>
+                <div className="mb-8 flex items-start justify-between gap-4">
+                    <div>
+                        <h1 className="text-3xl font-bold text-gray-900">Welcome back!</h1>
+                        <p className="mt-2 text-gray-600">
+                            Ready to create amazing content today?
+                        </p>
+                    </div>
+                    <button
+                        onClick={handleLogout}
+                        className="btn btn-secondary inline-flex items-center"
+                    >
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Logout
+                    </button>
                 </div>
 
                 {/* Quick Stats */}
@@ -74,7 +94,7 @@ export default function DashboardPage() {
                     <div className="flex items-start justify-between">
                         <div className="flex-1">
                             <h3 className="text-xl font-bold text-gray-900 mb-2">
-                                🚀 Ready to get started?
+                                Ready to get started?
                             </h3>
                             <p className="text-gray-700 mb-4">
                                 Generate your first batch of content in just a few clicks. Our AI will create

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import timedelta
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
 from app.core.security import (
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 # Pydantic schemas
 class UserRegister(BaseModel):
     email: EmailStr
-    username: str
+    username: Optional[str] = None
     password: str
     full_name: Optional[str] = None
 
@@ -52,29 +53,46 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
     """Register a new user"""
     
     # Check if user already exists
-    existing_user = db.query(User).filter(
-        (User.email == user_data.email) | (User.username == user_data.username)
-    ).first()
-    
-    if existing_user:
+    if db.query(User).filter(User.email == user_data.email).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email or username already registered"
+            detail="Email already registered"
         )
+
+    # Build a username (optional in API, required in DB)
+    base_username = (user_data.username or user_data.email.split("@", 1)[0]).strip()
+    if not base_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username could not be generated"
+        )
+
+    username = base_username
+    suffix = 1
+    while db.query(User).filter(User.username == username).first():
+        username = f"{base_username}{suffix}"
+        suffix += 1
     
     # Create new user
     hashed_password = get_password_hash(user_data.password)
     
     new_user = User(
         email=user_data.email,
-        username=user_data.username,
+        username=username,
         hashed_password=hashed_password,
         full_name=user_data.full_name,
         subscription_tier="free"
     )
     
     db.add(new_user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email or username already registered"
+        )
     db.refresh(new_user)
     
     # Create access token

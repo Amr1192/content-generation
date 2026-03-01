@@ -5,7 +5,7 @@ import os
 
 from app.core.config import settings
 from app.core.database import Base, engine
-from app.api.v1 import auth, content, brands
+from app.api.v1 import auth, content, brands, social
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -38,6 +38,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(content.router, prefix="/api/v1")
 app.include_router(brands.router, prefix="/api/v1")
+app.include_router(social.router, prefix="/api/v1")
 
 
 @app.get("/")

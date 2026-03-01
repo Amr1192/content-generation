@@ -9,7 +9,7 @@ class AIContentGenerator:
     
     def __init__(self):
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        self.model = "gpt-4-turbo-preview"  # or gpt-4, gpt-3.5-turbo for cost savings
+        self.model = settings.OPENAI_TEXT_MODEL
     
     def generate_posts(
         self,

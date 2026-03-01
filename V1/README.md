@@ -1,237 +1,144 @@
 # ContentKing - AI Social Media Content Engine
 
-Transform **1 idea** into **30+ posts + 10 reels** with AI-powered content generation, design, and optimization.
+Transform 1 idea into 30+ posts and 10 reels with AI-powered content generation, design, and optimization.
 
-![ContentKing Platform](https://img.shields.io/badge/Status-MVP-green) ![Python](https://img.shields.io/badge/Python-3.11+-blue) ![Next.js](https://img.shields.io/badge/Next.js-14-black)
-
-## 🚀 Features
+## Features
 
 ### Core Features (MVP)
-- ✅ **AI Content Generation**: Generate 30+ unique posts from a single idea
-- ✅ **Reel Scripts**: Create 10 viral-ready short-form video scripts
-- ✅ **Smart Hashtags**: AI-powered hashtag recommendations with competition analysis
-- ✅ **Auto Design**: Generate beautiful post designs with customizable templates
-- ✅ **Multi-Platform**: Optimized for Instagram, TikTok, Facebook, LinkedIn, Twitter
-- ✅ **Brand Management**: Multiple brand profiles with custom voice and style
+- AI content generation from a single idea
+- Reel script generation
+- AI hashtag suggestions
+- Auto-generated post designs
+- Multi-platform support (Instagram, TikTok, Facebook, LinkedIn, Twitter)
+- Brand profile management
 
 ### Coming Soon
-- 🔜 Social media publishing integration
-- 🔜 Analytics dashboard
-- 🔜 AI image generation
-- 🔜 Team collaboration
-- 🔜 Content calendar
+- Social media publishing integration
+- Analytics dashboard
+- AI image generation
+- Team collaboration
+- Content calendar
 
-## 🏗️ Tech Stack
+## Tech Stack
 
 ### Backend
-- **Framework**: FastAPI (Python)
-- **Database**: PostgreSQL
-- **Cache**: Redis
-- **AI**: OpenAI GPT-4, Anthropic Claude
-- **Image Processing**: Pillow, OpenCV
-- **Task Queue**: Celery
+- Framework: FastAPI (Python)
+- Database: MySQL
+- Cache: Redis
+- AI: OpenAI, Anthropic
+- Image Processing: Pillow, OpenCV
+- Task Queue: Celery
 
 ### Frontend
-- **Framework**: Next.js 14 (React)
-- **Styling**: Tailwind CSS
-- **State Management**: Zustand
-- **Data Fetching**: TanStack Query
-- **UI Components**: Custom + Radix UI
+- Framework: Next.js 14 (React)
+- Styling: Tailwind CSS
+- State Management: Zustand
+- Data Fetching: TanStack Query
+- HTTP Client: Axios
 
-## 📦 Installation
-
-### Prerequisites
+## Prerequisites
 - Python 3.11+
 - Node.js 18+
-- PostgreSQL 15+
-- Redis
+- MySQL 8+
+- Redis (optional for some background tasks)
 
-### Backend Setup
+## First-Time Setup (Do Once)
+
+### Backend
 
 ```bash
 cd backend
-
-# Create virtual environment
 python -m venv venv
-venv\Scripts\activate  # Windows
-# source venv/bin/activate  # Mac/Linux
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set up environment variables
+venv\Scripts\python -m pip install -r requirements.txt
 copy .env.example .env
-# Edit .env with your API keys and database credentials
-
-# Create database
-createdb contentking_db
-
-# Run migrations (create tables)
-python -c "from app.core.database import Base, engine; Base.metadata.create_all(bind=engine)"
-
-# Start server
-uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend Setup
+Edit `backend/.env` and set:
+
+```env
+DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/contentking_db
+```
+
+Create the database (if it does not exist):
+
+```bash
+venv\Scripts\python -c "from sqlalchemy.engine.url import make_url; from dotenv import dotenv_values; import pymysql; u=make_url(dotenv_values('.env')['DATABASE_URL']); c=pymysql.connect(host=u.host or 'localhost', port=u.port or 3306, user=u.username, password=u.password or '', autocommit=True); cur=c.cursor(); cur.execute(f\"CREATE DATABASE IF NOT EXISTS `{u.database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci\"); c.close(); print('DB ready')"
+```
+
+### Frontend
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Set up environment variables
-echo "NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1" > .env.local
-
-# Start development server
-npm run dev
 ```
 
-Visit:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+Create `frontend/.env.local`:
 
-## 🔑 Environment Variables
-
-### Backend (.env)
-```env
-# Required
-DATABASE_URL=postgresql://postgres:password@localhost:5432/contentking_db
-SECRET_KEY=your-secret-key-here
-JWT_SECRET_KEY=your-jwt-secret-here
-OPENAI_API_KEY=your-openai-api-key
-
-# Optional
-ANTHROPIC_API_KEY=your-anthropic-api-key
-REDIS_URL=redis://localhost:6379/0
-```
-
-### Frontend (.env.local)
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 ```
 
-## 📖 Usage
+## Start Again After Closing Servers (Daily Flow)
 
-### 1. Generate Content
+Use two terminals from project root (`V1`).
 
-```bash
-# Via API
-curl -X POST http://localhost:8000/api/v1/content/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "idea": "5 tips for productivity",
-    "platform": "instagram",
-    "count": 30,
-    "tone": "professional",
-    "generate_designs": true
-  }'
-```
+### Terminal 1 - Backend
 
-### 2. Generate Reel Scripts
-
-```bash
-curl -X POST http://localhost:8000/api/v1/content/reels/scripts \
-  -H "Content-Type: application/json" \
-  -d '{
-    "idea": "Morning routine for success",
-    "count": 10,
-    "duration": "30s"
-  }'
-```
-
-### 3. Generate Hashtags
-
-```bash
-curl -X POST http://localhost:8000/api/v1/content/hashtags \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "Your post content here",
-    "platform": "instagram",
-    "count": 30
-  }'
-```
-
-## 🎨 Project Structure
-
-```
-content-King/
-├── backend/
-│   ├── app/
-│   │   ├── api/v1/          # API endpoints
-│   │   ├── core/            # Configuration
-│   │   ├── models/          # Database models
-│   │   ├── services/        # Business logic
-│   │   └── main.py          # FastAPI app
-│   ├── requirements.txt
-│   └── .env.example
-│
-├── frontend/
-│   ├── app/                 # Next.js app directory
-│   ├── components/          # React components
-│   ├── lib/                 # Utilities
-│   ├── package.json
-│   └── .env.example
-│
-└── README.md
-```
-
-## 🧪 Testing
-
-### Backend Tests
 ```bash
 cd backend
-pytest
+venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend Tests
+### Terminal 2 - Frontend
+
 ```bash
 cd frontend
-npm test
+npm run dev
 ```
 
-## 🚀 Deployment
+## Verify It Is Running
+- Frontend: http://localhost:3000
+- Backend health: http://localhost:8000/health
+- API docs: http://localhost:8000/docs
 
-### Backend (Railway/Render/Heroku)
-1. Set environment variables
-2. Deploy from GitHub
-3. Run migrations
+## Troubleshooting
 
-### Frontend (Vercel/Netlify)
-1. Connect GitHub repository
-2. Set `NEXT_PUBLIC_API_URL`
-3. Deploy
+### Port 8000 already in use
 
-## 📝 API Documentation
+```bash
+netstat -ano | findstr :8000
+taskkill /PID <PID> /F
+```
 
-Once the backend is running, visit:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
+### Port 3000 already in use
 
-## 🤝 Contributing
+```bash
+netstat -ano | findstr :3000
+taskkill /PID <PID> /F
+```
 
-Contributions are welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+### Traceback mentions `importlib\__init__.py`
+That line is usually a loader frame, not the real error. Check the final lines of the traceback for the actual cause.
 
-## 📄 License
+## Environment Variables
 
-MIT License - see LICENSE file for details
+### Backend (`backend/.env`)
 
-## 🙏 Acknowledgments
+```env
+DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/contentking_db
+SECRET_KEY=your-secret-key
+JWT_SECRET_KEY=your-jwt-secret-key
+OPENAI_API_KEY=your-openai-api-key
+ANTHROPIC_API_KEY=optional
+REDIS_URL=redis://localhost:6379/0
+```
 
-- OpenAI for GPT-4 API
-- FastAPI for the amazing framework
-- Next.js team for the excellent React framework
+### Frontend (`frontend/.env.local`)
 
-## 📧 Contact
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+```
 
-For questions or support, please open an issue on GitHub.
-
----
-
-**Built with ❤️ using AI-powered tools**
+## API Documentation
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc

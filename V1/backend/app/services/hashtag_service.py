@@ -9,7 +9,7 @@ class HashtagService:
     
     def __init__(self):
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        self.model = "gpt-4-turbo-preview"
+        self.model = settings.OPENAI_TEXT_MODEL
     
     def generate_hashtags(
         self,

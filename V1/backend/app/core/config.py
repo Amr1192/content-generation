@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from typing import List, Optional
+from pathlib import Path
 
 
 class Settings(BaseSettings):
@@ -19,6 +20,26 @@ class Settings(BaseSettings):
     
     # OpenAI
     OPENAI_API_KEY: str
+    OPENAI_TEXT_MODEL: str = "gpt-4.1-mini"
+    OPENAI_IMAGE_MODEL: str = "gpt-image-1"
+
+    # Social OAuth / Publishing (Twitter/X first)
+    TWITTER_CLIENT_ID: str = ""
+    TWITTER_CLIENT_SECRET: str = ""
+    TWITTER_REDIRECT_URI: str = "http://localhost:8000/api/v1/social/oauth/twitter/callback"
+    LINKEDIN_CLIENT_ID: str = ""
+    LINKEDIN_CLIENT_SECRET: str = ""
+    LINKEDIN_REDIRECT_URI: str = "http://localhost:8000/api/v1/social/oauth/linkedin/callback"
+    LINKEDIN_API_VERSION: str = ""
+    FACEBOOK_APP_ID: str = ""
+    FACEBOOK_APP_SECRET: str = ""
+    FACEBOOK_REDIRECT_URI: str = "http://localhost:8000/api/v1/social/oauth/facebook/callback"
+    INSTAGRAM_APP_ID: str = ""
+    INSTAGRAM_APP_SECRET: str = ""
+    INSTAGRAM_REDIRECT_URI: str = "http://localhost:8000/api/v1/social/oauth/instagram/callback"
+    TIKTOK_CLIENT_KEY: str = ""
+    TIKTOK_CLIENT_SECRET: str = ""
+    TIKTOK_REDIRECT_URI: str = "http://localhost:8000/api/v1/social/oauth/tiktok/callback"
     
     # Anthropic (optional)
     ANTHROPIC_API_KEY: str = ""
@@ -49,7 +70,7 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = None
     
     class Config:
-        env_file = ".env"
+        env_file = str(Path(__file__).resolve().parents[2] / ".env")
         case_sensitive = True
         # Allow extra fields in .env without errors
         extra = "ignore"

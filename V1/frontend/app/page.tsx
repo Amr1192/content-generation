@@ -4,26 +4,8 @@ import { Sparkles, Zap, TrendingUp, BarChart3 } from 'lucide-react'
 export default function HomePage() {
     return (
         <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50">
-            {/* Header */}
-            <header className="container py-6">
-                <nav className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                        <Sparkles className="h-8 w-8 text-primary-600" />
-                        <span className="text-2xl font-bold text-gray-900">ContentKing</span>
-                    </div>
-                    <div className="flex items-center space-x-4">
-                        <Link href="/login" className="text-gray-600 hover:text-gray-900">
-                            Login
-                        </Link>
-                        <Link href="/signup" className="btn btn-primary">
-                            Get Started
-                        </Link>
-                    </div>
-                </nav>
-            </header>
-
             {/* Hero Section */}
-            <main className="container py-20">
+            <main className="container py-16">
                 <div className="mx-auto max-w-4xl text-center">
                     <div className="mb-6 inline-flex items-center rounded-full bg-primary-100 px-4 py-2 text-sm font-medium text-primary-700">
                         <Zap className="mr-2 h-4 w-4" />

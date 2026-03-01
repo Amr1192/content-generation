@@ -48,8 +48,12 @@ class DesignService:
         # Apply style-specific design
         if template_style == "gradient":
             img = self._apply_gradient_background(img, brand_colors)
+            # Improve contrast on colorful backgrounds
+            brand_colors["text"] = "#ffffff"
         elif template_style == "bold":
             img = self._apply_bold_style(img, brand_colors)
+            # Bold style uses saturated background; use white text.
+            brand_colors["text"] = "#ffffff"
         elif template_style == "minimal":
             img = self._apply_minimal_style(img, brand_colors)
         
@@ -120,14 +124,14 @@ class DesignService:
         width, height = img.size
         draw = ImageDraw.Draw(img)
         
-        # Add colored accent bars
+        # Stronger, clearly distinct look from minimal/gradient:
+        # full saturated background + geometric overlays.
         primary_rgb = self._hex_to_rgb(colors["primary"])
-        
-        # Top bar
-        draw.rectangle([(0, 0), (width, 80)], fill=primary_rgb)
-        
-        # Bottom bar
-        draw.rectangle([(0, height - 80), (width, height)], fill=primary_rgb)
+        secondary_rgb = self._hex_to_rgb(colors["secondary"])
+
+        draw.rectangle([(0, 0), (width, height)], fill=primary_rgb)
+        draw.polygon([(0, 0), (width * 0.55, 0), (0, height * 0.55)], fill=secondary_rgb)
+        draw.polygon([(width, height), (width * 0.45, height), (width, height * 0.45)], fill=secondary_rgb)
         
         return img
     

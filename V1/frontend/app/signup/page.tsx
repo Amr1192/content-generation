@@ -2,9 +2,12 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Sparkles, Mail, Lock, User, ArrowRight, Check } from 'lucide-react'
+import { authApi } from '@/lib/api'
 
 export default function SignupPage() {
+    const router = useRouter()
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -12,12 +15,51 @@ export default function SignupPage() {
         confirmPassword: ''
     })
     const [isLoading, setIsLoading] = useState(false)
+    const [error, setError] = useState('')
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
+        setError('')
+
+        // Validate passwords match
+        if (formData.password !== formData.confirmPassword) {
+            setError('Passwords do not match')
+            return
+        }
+
+        // Validate password length
+        if (formData.password.length < 8) {
+            setError('Password must be at least 8 characters')
+            return
+        }
+
         setIsLoading(true)
-        // TODO: Implement signup logic
-        setTimeout(() => setIsLoading(false), 1000)
+
+        try {
+            // Call the backend API
+            const response = await authApi.register({
+                email: formData.email,
+                username: formData.email.split('@')[0], // Use email prefix as username
+                password: formData.password,
+                full_name: formData.name
+            })
+
+            // Store the token
+            localStorage.setItem('token', response.access_token)
+            localStorage.setItem('user', JSON.stringify(response.user))
+
+            // Redirect to dashboard
+            router.push('/dashboard')
+        } catch (err: any) {
+            console.error('Registration error:', err)
+            setError(
+                err.userMessage ||
+                err.response?.data?.detail ||
+                'Registration failed. Please try again.'
+            )
+        } finally {
+            setIsLoading(false)
+        }
     }
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -69,6 +111,13 @@ export default function SignupPage() {
                             <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Your Account</h1>
                             <p className="text-gray-600">Get started for free, no credit card needed</p>
                         </div>
+
+                        {/* Error Message */}
+                        {error && (
+                            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                                <p className="text-sm text-red-600">{error}</p>
+                            </div>
+                        )}
 
                         <form onSubmit={handleSubmit} className="space-y-5">
                             {/* Name Input */}

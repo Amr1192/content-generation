@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Literal
 from datetime import datetime
+import re
 
 from app.core.database import get_db
 from app.models.content import Content, ContentType, Platform
@@ -10,6 +11,7 @@ from app.models.user import User
 from app.services.ai_content_service import ai_content_generator
 from app.services.hashtag_service import hashtag_service
 from app.services.design_service import design_service
+from app.services.ai_image_service import ai_image_service
 
 router = APIRouter(prefix="/content", tags=["Content Generation"])
 
@@ -18,10 +20,13 @@ router = APIRouter(prefix="/content", tags=["Content Generation"])
 class ContentGenerationRequest(BaseModel):
     idea: str
     platform: str = "instagram"
-    count: int = 30
+    count: int = 10
     tone: str = "professional"
     brand_id: Optional[int] = None
-    generate_designs: bool = False
+    generate_designs: bool = False  # legacy key kept for compatibility
+    generate_images: bool = False
+    image_mode: Literal["ai", "template"] = "ai"
+    image_style: str = "photorealistic"
     design_style: str = "minimal"
 
 
@@ -53,6 +58,13 @@ class ContentResponse(BaseModel):
         from_attributes = True
 
 
+class ContentUpdateRequest(BaseModel):
+    generated_text: Optional[str] = None
+    caption: Optional[str] = None
+    hashtags: Optional[List[str]] = None
+    status: Optional[str] = None
+
+
 @router.post("/generate", status_code=status.HTTP_201_CREATED)
 async def generate_content(
     request: ContentGenerationRequest,
@@ -78,20 +90,13 @@ async def generate_content(
         generated_content = []
         
         for post_data in posts:
-            # Generate hashtags for each post
-            hashtag_result = hashtag_service.generate_hashtags(
+            # Keep this endpoint responsive: avoid per-post extra AI calls.
+            recommended_hashtags = _generate_basic_hashtags(
                 content=post_data["content"],
-                platform=request.platform,
-                count=20
+                idea=request.idea,
+                count=12
             )
-            
-            recommended_hashtags = hashtag_result.get("recommended_set", [])
-            
-            # Generate caption
-            caption = ai_content_generator.generate_caption(
-                post_content=post_data["content"],
-                platform=request.platform
-            )
+            caption = _generate_basic_caption(post_data["content"])
             
             # Create content record
             content = Content(
@@ -109,28 +114,37 @@ async def generate_content(
             )
             
             db.add(content)
-            db.commit()
-            db.refresh(content)
+            db.flush()
             
-            # Generate design if requested
-            if request.generate_designs:
-                # Run design generation in background
-                background_tasks.add_task(
-                    generate_design_for_content,
-                    content.id,
-                    post_data["content"],
-                    request.design_style
-                )
+            should_generate_images = request.generate_images or request.generate_designs
+            if should_generate_images:
+                if request.image_mode == "ai":
+                    image_prompt = _build_ai_image_prompt(
+                        idea=request.idea,
+                        post_content=post_data["content"],
+                        platform=request.platform,
+                        tone=request.tone,
+                        style=request.image_style
+                    )
+                    content.design_url = ai_image_service.generate_image(prompt=image_prompt)
+                else:
+                    content.design_url = design_service.generate_post_design(
+                        content=post_data["content"],
+                        template_style=request.design_style
+                    )
             
             generated_content.append({
                 "id": content.id,
                 "content": content.generated_text,
                 "caption": content.caption,
                 "hashtags": content.hashtags,
+                "design_url": content.design_url,
                 "content_type": post_data.get("content_type"),
                 "hook": post_data.get("hook"),
                 "estimated_engagement": post_data.get("estimated_engagement")
             })
+        
+        db.commit()
         
         return {
             "success": True,
@@ -146,6 +160,61 @@ async def generate_content(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating content: {str(e)}"
         )
+
+
+def _generate_basic_caption(post_content: str, max_length: int = 220) -> str:
+    """Fast local caption fallback to avoid multiple AI round trips."""
+    text = " ".join(post_content.split())
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - 3].rstrip() + "..."
+
+
+def _generate_basic_hashtags(content: str, idea: str, count: int = 12) -> List[str]:
+    """Generate simple hashtags from idea/content keywords."""
+    raw = f"{idea} {content}".lower()
+    words = re.findall(r"[a-z0-9]+", raw)
+    stop_words = {
+        "the", "and", "for", "with", "that", "this", "from", "your", "you",
+        "are", "was", "were", "have", "has", "had", "about", "into", "what",
+        "when", "where", "which", "while", "will", "would", "could", "should",
+        "them", "they", "their", "there", "here", "just", "more", "less",
+        "very", "also", "than", "then", "into", "onto", "over", "under",
+    }
+
+    seen = set()
+    tags: List[str] = []
+    for w in words:
+        if len(w) < 4 or w in stop_words:
+            continue
+        if w in seen:
+            continue
+        seen.add(w)
+        tags.append(w)
+        if len(tags) >= count:
+            break
+
+    return tags
+
+
+def _build_ai_image_prompt(
+    idea: str,
+    post_content: str,
+    platform: str,
+    tone: str,
+    style: str
+) -> str:
+    """Build context-rich prompt so image reflects the idea, not caption text."""
+    clean_content = " ".join(post_content.split())
+    return (
+        f"Create a high-quality social media image for {platform}. "
+        f"Core idea: {idea}. "
+        f"Post message/context: {clean_content}. "
+        f"Desired mood/tone: {tone}. "
+        f"Visual style: {style}. "
+        "Do not render text, captions, logos, or watermarks. "
+        "Focus on a clear subject, strong composition, and visual storytelling."
+    )
 
 
 @router.post("/reels/scripts")
@@ -267,6 +336,40 @@ async def get_content(
             detail="Content not found"
         )
     
+    return content
+
+
+@router.put("/{content_id}", response_model=ContentResponse)
+async def update_content(
+    content_id: int,
+    payload: ContentUpdateRequest,
+    db: Session = Depends(get_db),
+    user_id: int = 1  # TODO: Get from auth token
+):
+    """Update editable fields of generated content."""
+
+    content = db.query(Content).filter(
+        Content.id == content_id,
+        Content.user_id == user_id
+    ).first()
+
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Content not found"
+        )
+
+    if payload.generated_text is not None:
+        content.generated_text = payload.generated_text
+    if payload.caption is not None:
+        content.caption = payload.caption
+    if payload.hashtags is not None:
+        content.hashtags = payload.hashtags
+    if payload.status is not None:
+        content.status = payload.status
+
+    db.commit()
+    db.refresh(content)
     return content
 
 

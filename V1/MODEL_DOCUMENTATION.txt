@@ -1,0 +1,69 @@
+ContentKing Model Documentation
+==============================
+
+This file documents the AI/non-AI models currently used in this project and their purpose.
+
+1) OpenAI Text Model
+- Config key: OPENAI_TEXT_MODEL
+- Default value: gpt-4.1-mini
+- Config source: backend/app/core/config.py and backend/.env
+
+Used by:
+- backend/app/services/ai_content_service.py
+  - generate_posts(): generates post ideas/content in JSON
+  - generate_reel_scripts(): generates short-form video scripts
+  - generate_caption(): generates caption text (available in service; current generate flow uses fast local caption fallback for performance)
+
+- backend/app/services/hashtag_service.py
+  - generate_hashtags(): hashtag strategy generation
+  - analyze_hashtag_performance(): analysis/report for hashtag sets
+  - get_trending_hashtags(): AI-estimated trending hashtags
+
+2) Anthropic
+- Config key: ANTHROPIC_API_KEY
+- Dependency present in requirements.txt
+- Current runtime usage: not actively used by the API routes right now
+
+3) Image Generation in Posts
+- This project supports two modes:
+  a) AI image generation (idea-aware)
+  b) Template rendering (text on design card)
+
+- AI image generation:
+  - Config key: OPENAI_IMAGE_MODEL
+  - Default: gpt-image-1 (fallback to dall-e-3 in service if needed)
+  - Implementation: backend/app/services/ai_image_service.py
+  - Trigger: /api/v1/content/generate with generate_images=true and image_mode=\"ai\"
+  - Prompt source: idea + generated post content + platform + tone + visual style
+
+- Template rendering:
+  - Implementation: backend/app/services/design_service.py
+  - Tech: Pillow (PIL)
+  - Trigger: /api/v1/content/generate with image_mode=\"template\"
+  - Styles: minimal, gradient, bold
+
+4) Database Model (for saved generated posts)
+- SQLAlchemy model: backend/app/models/content.py
+- Important field for generated images:
+  - design_url: path/URL of generated image for a post
+
+Notes
+-----
+- If you change OPENAI_TEXT_MODEL in backend/.env, restart backend.
+- If you change OPENAI_IMAGE_MODEL in backend/.env, restart backend.
+
+5) Social OAuth + Direct Publishing (current status)
+- Implemented now:
+  - Twitter/X OAuth connect flow (Authorization Code + direct post publish)
+  - Backend endpoints in backend/app/api/v1/social.py
+  - User connection storage in backend/app/models/social.py
+- Config required in backend/.env:
+  - TWITTER_CLIENT_ID
+  - TWITTER_CLIENT_SECRET
+  - TWITTER_REDIRECT_URI
+- Direct publish endpoint support:
+  - /api/v1/social/publish/{content_id}
+  - /api/v1/social/publish/bulk
+- Other platforms:
+  - Share intents/manual flows are available.
+  - Direct publish for Facebook/LinkedIn/Instagram/TikTok is not implemented yet.
