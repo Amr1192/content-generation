@@ -38,12 +38,14 @@ api.interceptors.response.use(
 export const contentApi = {
     generate: async (data: {
         idea: string
+        image_instructions?: string
         platform?: string
         count?: number
         tone?: string
         generate_designs?: boolean
         generate_images?: boolean
         image_mode?: 'ai' | 'template'
+        image_count?: number
         image_style?: string
         design_style?: string
     }) => {
@@ -101,6 +103,36 @@ export const contentApi = {
 
     delete: async (id: number) => {
         const response = await api.delete(`/content/${id}`)
+        return response.data
+    },
+
+    generateImages: async (
+        id: number,
+        data: {
+            count?: number
+            image_mode?: 'ai' | 'template'
+            image_style?: string
+            design_style?: string
+            image_instructions?: string
+        }
+    ) => {
+        const response = await api.post(`/content/${id}/images/generate`, data)
+        return response.data
+    },
+
+    uploadImages: async (id: number, files: File[]) => {
+        const formData = new FormData()
+        for (const file of files) {
+            formData.append('files', file)
+        }
+        const response = await api.post(`/content/${id}/images/upload`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        return response.data
+    },
+
+    deleteImage: async (id: number, imageId: number) => {
+        const response = await api.delete(`/content/${id}/images/${imageId}`)
         return response.data
     },
 }

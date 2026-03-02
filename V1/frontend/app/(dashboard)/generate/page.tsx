@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { contentApi, socialApi } from '@/lib/api'
-import { Sparkles, Loader2, Copy, Check, Pencil, Save, X, Share2 } from 'lucide-react'
+import { Sparkles, Loader2, Copy, Check, Pencil, Save, X, Share2, Trash2, ImagePlus } from 'lucide-react'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
 const BACKEND_BASE = API_BASE.replace(/\/api\/v1\/?$/, '')
@@ -14,17 +14,33 @@ type GeneratedPost = {
     caption?: string
     hashtags?: string[]
     design_url?: string | null
+    image_urls?: string[]
+    images?: { id: number; image_url: string; source?: string }[]
     content_type?: string
     estimated_engagement?: string
 }
 
+const toGeneratedPost = (raw: any): GeneratedPost => ({
+    id: raw.id,
+    content: raw.content ?? raw.generated_text ?? '',
+    caption: raw.caption ?? '',
+    hashtags: raw.hashtags ?? [],
+    design_url: raw.design_url ?? null,
+    image_urls: raw.image_urls ?? [],
+    images: raw.images ?? [],
+    content_type: raw.content_type,
+    estimated_engagement: raw.estimated_engagement,
+})
+
 export default function GeneratePage() {
     const [idea, setIdea] = useState('')
+    const [imageInstructions, setImageInstructions] = useState('')
     const [platform, setPlatform] = useState('instagram')
     const [count, setCount] = useState(10)
     const [tone, setTone] = useState('professional')
     const [generateDesigns, setGenerateDesigns] = useState(false)
     const [imageMode, setImageMode] = useState<'ai' | 'template'>('ai')
+    const [imageCount, setImageCount] = useState(1)
     const [imageStyle, setImageStyle] = useState('photorealistic')
     const [designStyle, setDesignStyle] = useState('minimal')
     const [copiedId, setCopiedId] = useState<number | null>(null)
@@ -39,11 +55,14 @@ export default function GeneratePage() {
     const [shareError, setShareError] = useState('')
     const [publishMessage, setPublishMessage] = useState('')
     const [publishError, setPublishError] = useState('')
+    const [imageActionMessage, setImageActionMessage] = useState('')
+    const [imageActionError, setImageActionError] = useState('')
+    const [extraImageCountByPost, setExtraImageCountByPost] = useState<Record<number, number>>({})
 
     const generateMutation = useMutation({
         mutationFn: contentApi.generate,
         onSuccess: (data) => {
-            setGeneratedPosts(data.posts || [])
+            setGeneratedPosts((data.posts || []).map(toGeneratedPost))
             setSaveError('')
             cancelEdit()
         },
@@ -139,16 +158,67 @@ export default function GeneratePage() {
 
         generateMutation.mutate({
             idea,
+            image_instructions: imageInstructions.trim() || undefined,
             platform,
             count,
             tone,
             generate_designs: generateDesigns,
             generate_images: generateDesigns,
             image_mode: imageMode,
+            image_count: imageCount,
             image_style: imageStyle,
             design_style: designStyle,
         })
     }
+
+    const generateMoreImagesMutation = useMutation({
+        mutationFn: (payload: { postId: number; count: number }) =>
+            contentApi.generateImages(payload.postId, {
+                count: payload.count,
+                image_mode: imageMode,
+                image_style: imageStyle,
+                design_style: designStyle,
+                image_instructions: imageInstructions.trim() || undefined,
+            }),
+        onSuccess: (data: any) => {
+            setImageActionError('')
+            setImageActionMessage('Generated additional image(s).')
+            const updated = toGeneratedPost(data.content)
+            setGeneratedPosts((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)))
+        },
+        onError: (err: any) => {
+            setImageActionMessage('')
+            setImageActionError(err?.userMessage || err?.response?.data?.detail || 'Failed to generate images.')
+        },
+    })
+
+    const uploadImagesMutation = useMutation({
+        mutationFn: (payload: { postId: number; files: File[] }) => contentApi.uploadImages(payload.postId, payload.files),
+        onSuccess: (data: any) => {
+            setImageActionError('')
+            setImageActionMessage('Uploaded image(s) successfully.')
+            const updated = toGeneratedPost(data.content)
+            setGeneratedPosts((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)))
+        },
+        onError: (err: any) => {
+            setImageActionMessage('')
+            setImageActionError(err?.userMessage || err?.response?.data?.detail || 'Image upload failed.')
+        },
+    })
+
+    const deleteImageMutation = useMutation({
+        mutationFn: (payload: { postId: number; imageId: number }) => contentApi.deleteImage(payload.postId, payload.imageId),
+        onSuccess: (data: any) => {
+            setImageActionError('')
+            setImageActionMessage('Image removed.')
+            const updated = toGeneratedPost(data.content)
+            setGeneratedPosts((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)))
+        },
+        onError: (err: any) => {
+            setImageActionMessage('')
+            setImageActionError(err?.userMessage || err?.response?.data?.detail || 'Failed to delete image.')
+        },
+    })
 
     const copyToClipboard = (text: string, id: number) => {
         navigator.clipboard.writeText(text)
@@ -261,6 +331,12 @@ export default function GeneratePage() {
         publishBulkMutation.mutate({ content_ids: ids, platforms })
     }
 
+    const getPostImages = (post: GeneratedPost) => {
+        if (post.images && post.images.length) return post.images
+        if (post.design_url) return [{ id: 0, image_url: post.design_url, source: 'legacy' }]
+        return []
+    }
+
     return (
         <div className="min-h-screen bg-gray-50">
             <div className="container py-8">
@@ -282,10 +358,15 @@ export default function GeneratePage() {
                                     <textarea
                                         value={idea}
                                         onChange={(e) => setIdea(e.target.value)}
-                                        placeholder="E.g., 5 tips for productivity"
+                                        placeholder={'E.g., 5 tips for productivity\nImage: close-up of a founder at a desk, natural daylight\nVisual: clean office, blue/white palette, no text on image'}
                                         className="input min-h-[120px] resize-none"
                                         required
                                     />
+                                    {generateDesigns && imageMode === 'ai' && (
+                                        <p className="mt-2 text-xs text-gray-500">
+                                            Tip: use the dedicated Image Instructions field below for strongest control. Idea-based Image/Visual/Scene lines still work as fallback.
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div>
@@ -349,21 +430,52 @@ export default function GeneratePage() {
                                         </div>
 
                                         {imageMode === 'ai' ? (
-                                            <div>
-                                                <label className="mb-2 block text-sm font-medium text-gray-700">AI Image Style</label>
-                                                <select
-                                                    value={imageStyle}
-                                                    onChange={(e) => setImageStyle(e.target.value)}
-                                                    className="input"
-                                                >
-                                                    <option value="photorealistic">Photorealistic</option>
-                                                    <option value="3d render">3D Render</option>
-                                                    <option value="cinematic">Cinematic</option>
-                                                    <option value="illustration">Illustration</option>
-                                                </select>
-                                            </div>
+                                            <>
+                                                <div>
+                                                    <label className="mb-2 block text-sm font-medium text-gray-700">Image Instructions (Highest Priority)</label>
+                                                    <textarea
+                                                        value={imageInstructions}
+                                                        onChange={(e) => setImageInstructions(e.target.value)}
+                                                        placeholder={'Subject: young doctor holding a stethoscope\nScene: bright modern clinic\nColors: blue and white\nAvoid: text overlays, logos'}
+                                                        className="input min-h-[100px] resize-none"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="mb-2 block text-sm font-medium text-gray-700">Images Per Post</label>
+                                                    <input
+                                                        type="number"
+                                                        value={imageCount}
+                                                        onChange={(e) => setImageCount(Math.min(6, Math.max(1, parseInt(e.target.value || '1', 10))))}
+                                                        min="1"
+                                                        max="6"
+                                                        className="input"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="mb-2 block text-sm font-medium text-gray-700">AI Image Style</label>
+                                                    <select
+                                                        value={imageStyle}
+                                                        onChange={(e) => setImageStyle(e.target.value)}
+                                                        className="input"
+                                                    >
+                                                        <option value="photorealistic">Photorealistic</option>
+                                                        <option value="3d render">3D Render</option>
+                                                        <option value="cinematic">Cinematic</option>
+                                                        <option value="illustration">Illustration</option>
+                                                    </select>
+                                                </div>
+                                            </>
                                         ) : (
                                             <div>
+                                                <label className="mb-2 block text-sm font-medium text-gray-700">Images Per Post</label>
+                                                <input
+                                                    type="number"
+                                                    value={imageCount}
+                                                    onChange={(e) => setImageCount(Math.min(6, Math.max(1, parseInt(e.target.value || '1', 10))))}
+                                                    min="1"
+                                                    max="6"
+                                                    className="input mb-3"
+                                                />
                                                 <label className="mb-2 block text-sm font-medium text-gray-700">Template Style</label>
                                                 <select
                                                     value={designStyle}
@@ -448,6 +560,8 @@ export default function GeneratePage() {
                                 </div>
 
                                 {saveError && <div className="card border-red-200 bg-red-50 text-red-700">{saveError}</div>}
+                                {imageActionMessage && <div className="card border-green-200 bg-green-50 text-green-700">{imageActionMessage}</div>}
+                                {imageActionError && <div className="card border-red-200 bg-red-50 text-red-700">{imageActionError}</div>}
                                 {shareMessage && <div className="card border-green-200 bg-green-50 text-green-700">{shareMessage}</div>}
                                 {shareError && <div className="card border-red-200 bg-red-50 text-red-700">{shareError}</div>}
                                 {publishMessage && <div className="card border-green-200 bg-green-50 text-green-700">{publishMessage}</div>}
@@ -537,16 +651,81 @@ export default function GeneratePage() {
                                             )}
                                         </div>
 
-                                        {post.design_url && (
-                                            <div>
-                                                <h4 className="mb-2 text-sm font-semibold text-gray-700">Generated Image:</h4>
-                                                <img
-                                                    src={`${BACKEND_BASE}/${post.design_url.replace(/^\.?\//, '')}`}
-                                                    alt="Generated design"
-                                                    className="max-w-sm rounded-lg border border-gray-200"
-                                                />
+                                        <div>
+                                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                                <h4 className="text-sm font-semibold text-gray-700">Images:</h4>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <input
+                                                        type="number"
+                                                        className="input w-20"
+                                                        min="1"
+                                                        max="6"
+                                                        value={extraImageCountByPost[post.id] ?? 1}
+                                                        onChange={(e) =>
+                                                            setExtraImageCountByPost((prev) => ({
+                                                                ...prev,
+                                                                [post.id]: Math.min(6, Math.max(1, parseInt(e.target.value || '1', 10))),
+                                                            }))
+                                                        }
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-secondary inline-flex items-center"
+                                                        onClick={() =>
+                                                            generateMoreImagesMutation.mutate({
+                                                                postId: post.id,
+                                                                count: extraImageCountByPost[post.id] ?? 1,
+                                                            })
+                                                        }
+                                                        disabled={generateMoreImagesMutation.isPending}
+                                                    >
+                                                        <ImagePlus className="mr-2 h-4 w-4" />
+                                                        Generate More
+                                                    </button>
+                                                    <label className="btn btn-secondary inline-flex cursor-pointer items-center">
+                                                        Upload
+                                                        <input
+                                                            type="file"
+                                                            accept="image/*"
+                                                            multiple
+                                                            className="hidden"
+                                                            onChange={(e) => {
+                                                                const files = Array.from(e.target.files || [])
+                                                                if (!files.length) return
+                                                                uploadImagesMutation.mutate({ postId: post.id, files })
+                                                                e.currentTarget.value = ''
+                                                            }}
+                                                        />
+                                                    </label>
+                                                </div>
                                             </div>
-                                        )}
+
+                                            {getPostImages(post).length ? (
+                                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                    {getPostImages(post).map((img) => (
+                                                        <div key={`${post.id}-${img.id}-${img.image_url}`} className="relative">
+                                                            <img
+                                                                src={`${BACKEND_BASE}/${img.image_url.replace(/^\.?\//, '')}`}
+                                                                alt="Post image"
+                                                                className="h-56 w-full rounded-lg border border-gray-200 object-cover"
+                                                            />
+                                                            {img.id > 0 && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="absolute right-2 top-2 rounded bg-white/90 p-1 text-red-600 hover:bg-white"
+                                                                    onClick={() => deleteImageMutation.mutate({ postId: post.id, imageId: img.id })}
+                                                                    title="Remove image"
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm text-gray-500">No images yet for this post.</p>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>

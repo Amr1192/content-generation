@@ -4,7 +4,8 @@ import base64
 import hashlib
 import secrets
 import time
-from datetime import datetime, timezone
+from pathlib import Path
+import mimetypes
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -530,11 +531,19 @@ def _resolve_target_platforms(db: Session, user_id: int, requested: Optional[Lis
 
 def _build_share_text(generated_text: str, caption: Optional[str], hashtags: List[str]) -> str:
     pieces = [generated_text.strip()]
-    if caption:
+    if caption and not _is_duplicate_caption(generated_text, caption):
         pieces.append(caption.strip())
     if hashtags:
         pieces.append(" ".join([f"#{tag}" for tag in hashtags]))
     return "\n\n".join([p for p in pieces if p])
+
+
+def _is_duplicate_caption(generated_text: str, caption: str) -> bool:
+    base = " ".join((generated_text or "").lower().split())
+    cap = " ".join((caption or "").lower().split())
+    if not base or not cap:
+        return False
+    return cap in base or base in cap
 
 
 def _build_share_links(platforms: List[str], share_text: str) -> Dict[str, Dict[str, str]]:
@@ -574,7 +583,7 @@ async def _publish_content_to_platforms(db: Session, user_id: int, content: Cont
                 result = await _twitter_publish_tweet(account.access_token or "", share_text)
                 output[platform] = {"status": "published", "result": result}
             elif platform == "linkedin":
-                result = await _linkedin_publish(account, share_text)
+                result = await _linkedin_publish(account, share_text, content.design_url)
                 output[platform] = {"status": "published", "result": result}
             elif platform == "facebook":
                 result = await _facebook_publish(account, share_text)
@@ -665,58 +674,143 @@ async def _linkedin_get_me(access_token: str) -> Dict[str, Any]:
         return resp.json()
 
 
-async def _linkedin_publish(account: SocialAccount, text: str) -> Dict[str, Any]:
+async def _linkedin_publish(account: SocialAccount, text: str, design_url: Optional[str] = None) -> Dict[str, Any]:
+    access_token = account.access_token or ""
+    if not access_token:
+        raise RuntimeError("missing_access_token")
+
     author_urn = account.refresh_token or ""
     if not author_urn.startswith("urn:li:person:"):
-        me = await _linkedin_get_me(account.access_token or "")
-        author_urn = f"urn:li:person:{me.get('sub', '')}"
-    payload = {
-        "author": author_urn,
-        "commentary": text[:3000],
-        "visibility": "PUBLIC",
-        "distribution": {
-            "feedDistribution": "MAIN_FEED",
-            "targetEntities": [],
-            "thirdPartyDistributionChannels": [],
-        },
-        "lifecycleState": "PUBLISHED",
-        "isReshareDisabledByAuthor": False,
-    }
-    versions_to_try: List[str] = []
-    if settings.LINKEDIN_API_VERSION:
-        versions_to_try.append(settings.LINKEDIN_API_VERSION.strip())
-    versions_to_try.append(datetime.now(timezone.utc).strftime("%Y%m"))
-    versions_to_try.extend(["202601", "202510", "202507", "202504", "202501"])
+        me = await _linkedin_get_me(access_token)
+        person_id = me.get("sub", "")
+        if not person_id:
+            raise RuntimeError("linkedin_person_id_not_found")
+        author_urn = f"urn:li:person:{person_id}"
 
-    dedup_versions: List[str] = []
-    seen = set()
-    for version in versions_to_try:
-        if version and version not in seen:
-            dedup_versions.append(version)
-            seen.add(version)
+    image_asset_urn: Optional[str] = None
+    if design_url:
+        file_path = _resolve_design_file_path(design_url)
+        if not file_path or not file_path.exists():
+            raise RuntimeError(f"linkedin_image_file_not_found: {design_url}")
+        image_asset_urn = await _linkedin_upload_image_asset(
+            access_token=access_token,
+            author_urn=author_urn,
+            file_path=file_path,
+        )
 
-    last_error = ""
+    payload = _build_linkedin_ugc_payload(author_urn, text, image_asset_urn)
     async with httpx.AsyncClient(timeout=30.0) as client:
-        for version in dedup_versions:
-            resp = await client.post(
-                "https://api.linkedin.com/rest/posts",
-                headers={
-                    "Authorization": f"Bearer {account.access_token}",
-                    "Content-Type": "application/json",
-                    "LinkedIn-Version": version,
-                    "X-Restli-Protocol-Version": "2.0.0",
-                },
-                json=payload,
-            )
-            if resp.status_code < 400:
-                return resp.json() if resp.text else {"status": "ok", "linkedin_version": version}
+        resp = await client.post(
+            "https://api.linkedin.com/v2/ugcPosts",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+                "X-Restli-Protocol-Version": "2.0.0",
+            },
+            json=payload,
+        )
+        if resp.status_code >= 400:
+            raise RuntimeError(f"LinkedIn publish failed: {resp.text}")
+        return resp.json() if resp.text else {"status": "ok", "has_image": bool(image_asset_urn)}
 
-            body = resp.text or ""
-            last_error = f"LinkedIn publish failed (version {version}): {body}"
-            if "NONEXISTENT_VERSION" not in body:
-                break
 
-    raise RuntimeError(last_error or "LinkedIn publish failed")
+def _resolve_design_file_path(design_url: str) -> Optional[Path]:
+    design_url = (design_url or "").strip()
+    if not design_url or design_url.startswith(("http://", "https://")):
+        return None
+
+    candidate = Path(design_url)
+    if candidate.is_file():
+        return candidate.resolve()
+
+    repo_root = Path(__file__).resolve().parents[4]
+    checks = [
+        repo_root / design_url,
+        repo_root / "backend" / design_url,
+        Path.cwd() / design_url,
+    ]
+    for path in checks:
+        if path.is_file():
+            return path.resolve()
+    return None
+
+
+def _build_linkedin_ugc_payload(author_urn: str, text: str, image_asset_urn: Optional[str]) -> Dict[str, Any]:
+    share_content: Dict[str, Any] = {
+        "shareCommentary": {"text": text[:3000]},
+        "shareMediaCategory": "NONE",
+    }
+    if image_asset_urn:
+        share_content["shareMediaCategory"] = "IMAGE"
+        share_content["media"] = [
+            {
+                "status": "READY",
+                "media": image_asset_urn,
+                "title": {"text": "Generated image"},
+            }
+        ]
+
+    return {
+        "author": author_urn,
+        "lifecycleState": "PUBLISHED",
+        "specificContent": {
+            "com.linkedin.ugc.ShareContent": share_content,
+        },
+        "visibility": {
+            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC",
+        },
+    }
+
+
+async def _linkedin_upload_image_asset(access_token: str, author_urn: str, file_path: Path) -> str:
+    mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    file_bytes = file_path.read_bytes()
+
+    register_payload = {
+        "registerUploadRequest": {
+            "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+            "owner": author_urn,
+            "serviceRelationships": [
+                {
+                    "relationshipType": "OWNER",
+                    "identifier": "urn:li:userGeneratedContent",
+                }
+            ],
+        }
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        register_resp = await client.post(
+            "https://api.linkedin.com/v2/assets?action=registerUpload",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+                "X-Restli-Protocol-Version": "2.0.0",
+            },
+            json=register_payload,
+        )
+        if register_resp.status_code >= 400:
+            raise RuntimeError(f"LinkedIn image register failed: {register_resp.text}")
+
+        register_body = register_resp.json()
+        value = register_body.get("value", {})
+        upload_mechanism = value.get("uploadMechanism", {})
+        upload_data = upload_mechanism.get("com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest", {})
+        upload_url = upload_data.get("uploadUrl")
+        asset_urn = value.get("asset")
+
+        if not upload_url or not asset_urn:
+            raise RuntimeError("LinkedIn image register response missing uploadUrl/asset URN")
+
+        upload_resp = await client.put(
+            upload_url,
+            headers={"Content-Type": mime_type},
+            content=file_bytes,
+        )
+        if upload_resp.status_code >= 400:
+            raise RuntimeError(f"LinkedIn image upload failed: {upload_resp.text}")
+
+    return asset_urn
 
 
 async def _facebook_exchange_code_for_token(code: str, redirect_uri: str, app_id: str, app_secret: str) -> Dict[str, Any]:
