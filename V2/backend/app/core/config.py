@@ -1,5 +1,4 @@
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
 from typing import List, Optional
 from pathlib import Path
 
@@ -69,19 +68,6 @@ class Settings(BaseSettings):
     SMTP_PORT: Optional[int] = None
     SMTP_USER: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
-
-    @field_validator("DEBUG", mode="before")
-    @classmethod
-    def coerce_debug_bool(cls, value):
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            lowered = value.strip().lower()
-            if lowered in {"1", "true", "yes", "on", "debug", "dev", "development"}:
-                return True
-            if lowered in {"0", "false", "no", "off", "release", "prod", "production"}:
-                return False
-        return value
     
     class Config:
         env_file = str(Path(__file__).resolve().parents[2] / ".env")
